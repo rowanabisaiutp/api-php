@@ -1,140 +1,213 @@
 <?php
-// Configuración de la conexión a la base de datos
-$servername = "b5csg5yxkxhmm54nb0ac-mysql.services.clever-cloud.com";
+$host = "b5csg5yxkxhmm54nb0ac-mysql.services.clever-cloud.com";
 $username = "ulxjdpc2g5rz5ri9";
 $password = "5do23K3iLKdlfSN0raHW";
 $dbname = "b5csg5yxkxhmm54nb0ac";
 
-// Permitir solicitudes desde cualquier origen
-header("Access-Control-Allow-Origin: *");
-
-// Permitir los métodos HTTP especificados
-header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE");
-
-// Permitir ciertos encabezados HTTP
-header("Access-Control-Allow-Headers: Content-Type");
-
-// Permitir que las cookies sean enviadas desde el cliente al servidor
-header("Access-Control-Allow-Credentials: true");
-
-// Establecer la duración máxima de la caché para los resultados preflight (opcional)
-header("Access-Control-Max-Age: 3600");
-
-// Crear conexión
-$conn = new mysqli($servername, $username, $password, $dbname);
-
-// Verificar la conexión
-if ($conn->connect_error) {
-    die("Conexión fallida: " . $conn->connect_error);
-}
-
-// Verificar el método de la solicitud HTTP
-if ($_SERVER["REQUEST_METHOD"] === "GET") {
-    // Obtener todos los registros de la tabla pc
-    $sql_select = "SELECT * FROM pc";
-    $result_select = $conn->query($sql_select);
-
-    // Verificar si hay resultados y mostrarlos
-    if ($result_select->num_rows > 0) {
-        // Inicializar un array para almacenar los registros
-        $registros = array();
-
-        // Iterar sobre cada fila de resultados
-        while($row = $result_select->fetch_assoc()) {
-            // Agregar el registro al array
-            $registros[] = $row;
-        }
-
-        // Mostrar los registros en formato JSON
-        echo json_encode($registros);
-    } else {
-        // Si no hay resultados, mostrar un mensaje de error
-        echo "No se encontraron registros.";
-    }
-} elseif ($_SERVER["REQUEST_METHOD"] === "POST") {
-    // Obtener los datos enviados en la solicitud POST
-    $data = json_decode(file_get_contents("php://input"), true);
+try {
+    // Crear una nueva instancia de PDO (PHP Data Objects)
+    $pdo = new PDO("mysql:host=$host;dbname=$dbname", $username, $password);
     
-    // Verificar si se recibieron los datos correctamente
-    if ($data) {
-        // Obtener los valores de los datos recibidos
-        $nombre = $data['nombre'];
-        $modelo = $data['modelo'];
-        $nserie = $data['nserie'];
-        $teclado = $data['teclado'];
-        $mouse = $data['mouse'];
-        $observacion = $data['observacion'];
-        $estado_id = $data['estado_id'];
-        $mesa_id = $data['mesa_id'];
+    // Configurar el modo de error para que PDO lance excepciones en caso de errores
+    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-        // Consulta SQL para insertar un nuevo registro
-        $sql_insert = "INSERT INTO pc (nombre, modelo, nserie, teclado, mouse, observacion, estado_id, mesa_id) 
-                       VALUES ('$nombre', '$modelo', '$nserie', $teclado, $mouse, '$observacion', $estado_id, $mesa_id)";
-        
-        // Ejecutar la consulta de inserción
-        if ($conn->query($sql_insert) === TRUE) {
-            echo "Registro insertado correctamente.";
+    // Opcional: Configurar el juego de caracteres a UTF-8
+    $pdo->exec("set names utf8");
+
+    // Permitir solicitudes desde cualquier origen
+    header("Access-Control-Allow-Origin: *");
+
+    // Permitir los métodos GET, POST, PUT, DELETE y OPTIONS
+    header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
+
+    // Permitir los encabezados de solicitud Authorization y Content-Type
+    header("Access-Control-Allow-Headers: Authorization, Content-Type");
+
+    // Permitir que el navegador envíe cookies con la solicitud
+    header("Access-Control-Allow-Credentials: true");
+
+    // Verificar si la solicitud es de tipo OPTIONS (preflight)
+    if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
+        http_response_code(200);
+        exit();
+    }
+
+    if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+        // Verificar si se proporcionó un ID en la URL
+        if(isset($_GET['id'])) {
+            $id = $_GET['id'];
+
+            // Consulta SQL para seleccionar un registro por su ID
+            $sql = "SELECT pc.id, pc.nombre, pc.modelo, pc.nserie, pc.teclado, pc.mouse, pc.observacion, estado.id as estado_id, estado.estado, mesa.id as mesa_id, mesa.numero_mesa
+                    FROM pc 
+                    INNER JOIN estado ON pc.estado_id = estado.id 
+                    LEFT JOIN mesa ON pc.mesa_id = mesa.id
+                    WHERE pc.id = :id";
+            
+            // Preparar la consulta
+            $stmt = $pdo->prepare($sql);
+            
+            // Vincular el parámetro :id
+            $stmt->bindParam(':id', $id, PDO::PARAM_INT);
+            
+            // Ejecutar la consulta
+            $stmt->execute();
+            
+            // Obtener el resultado como un array asociativo
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            // Comprobar si se encontró el registro
+            if ($result) {
+                // Convertir a formato JSON y enviar la respuesta
+                header('Content-Type: application/json');
+                echo json_encode($result);
+            } else {
+                // Enviar respuesta de error si no se encontró el registro
+                header('HTTP/1.1 404 Not Found');
+                echo json_encode(array('message' => 'Registro no encontrado'));
+            }
         } else {
-            echo "Error al insertar el registro: " . $conn->error;
+            // Consulta SQL para recuperar todos los registros
+            $sql = "SELECT pc.id, pc.nombre, pc.modelo, pc.nserie, pc.teclado, pc.mouse, pc.observacion, estado.id as estado_id, estado.estado, mesa.id as mesa_id, mesa.numero_mesa
+                    FROM pc 
+                    INNER JOIN estado ON pc.estado_id = estado.id 
+                    LEFT JOIN mesa ON pc.mesa_id = mesa.id";
+            
+            // Preparar la consulta
+            $stmt = $pdo->prepare($sql);
+            
+            // Ejecutar la consulta
+            $stmt->execute();
+            
+            // Obtener los resultados como un array asociativo
+            $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Comprobar si se encontraron resultados
+            if ($results) {
+                // Convertir a formato JSON y enviar la respuesta
+                header('Content-Type: application/json');
+                echo json_encode($results);
+            } else {
+                // Enviar respuesta de error si no se encontraron resultados
+                header('HTTP/1.1 404 Not Found');
+                echo json_encode(array('message' => 'No se encontraron registros'));
+            }
+        }
+    } elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        // Leer el cuerpo de la solicitud JSON
+        $json_data = file_get_contents('php://input');
+        
+        // Decodificar el JSON en un array asociativo
+        $pcs_data = json_decode($json_data, true);
+        
+        // Insertar los datos en la base de datos
+        $sql = "INSERT INTO pc (nombre, modelo, nserie, teclado, mouse, observacion, estado_id, mesa_id) VALUES (:nombre, :modelo, :nserie, :teclado, :mouse, :observacion, :estado_id, :mesa_id)";
+        
+        // Preparar la consulta
+        $stmt = $pdo->prepare($sql);
+        
+        // Vincular los parámetros
+        $stmt->bindParam(':nombre', $pcs_data['nombre']);
+        $stmt->bindParam(':modelo', $pcs_data['modelo']);
+        $stmt->bindParam(':nserie', $pcs_data['nserie']);
+        $stmt->bindParam(':teclado', $pcs_data['teclado']);
+        $stmt->bindParam(':mouse', $pcs_data['mouse']);
+        $stmt->bindParam(':observacion', $pcs_data['observacion']);
+        $stmt->bindParam(':estado_id', $pcs_data['estado_id']);
+        $stmt->bindParam(':mesa_id', $pcs_data['mesa_id']);
+        
+        // Ejecutar la consulta
+        $stmt->execute();
+        
+        // Enviar respuesta de éxito
+        header('HTTP/1.1 201 Created');
+        echo json_encode(array('message' => 'Registro creado exitosamente'));
+    } elseif ($_SERVER['REQUEST_METHOD'] === 'PUT') {
+        // Leer el cuerpo de la solicitud JSON
+        $json_data = file_get_contents('php://input');
+        
+        // Decodificar el JSON en un array asociativo
+        $pcs_data = json_decode($json_data, true);
+        
+        // Verificar si se proporcionó un ID en el cuerpo de la solicitud
+        if(isset($pcs_data['id'])) {
+            $id = $pcs_data['id'];
+
+            // Actualizar los datos en la base de datos
+            $sql = "UPDATE pc SET nombre = :nombre, modelo = :modelo, nserie = :nserie, teclado = :teclado, mouse = :mouse, observacion = :observacion, estado_id = :estado_id, mesa_id = :mesa_id WHERE id = :id";
+            
+            // Preparar la consulta
+            $stmt = $pdo->prepare($sql);
+            
+            // Vincular los parámetros
+            $stmt->bindParam(':id', $id, PDO::PARAM_INT);
+            $stmt->bindParam(':nombre', $pcs_data['nombre']);
+            $stmt->bindParam(':modelo', $pcs_data['modelo']);
+            $stmt->bindParam(':nserie', $pcs_data['nserie']);
+            $stmt->bindParam(':teclado', $pcs_data['teclado']);
+            $stmt->bindParam(':mouse', $pcs_data['mouse']);
+            $stmt->bindParam(':observacion', $pcs_data['observacion']);
+            $stmt->bindParam(':estado_id', $pcs_data['estado_id']);
+            $stmt->bindParam(':mesa_id', $pcs_data['mesa_id']);
+            
+            // Ejecutar la consulta
+            $stmt->execute();
+            
+            // Comprobar si se actualizó el registro
+            if ($stmt->rowCount() > 0) {
+                // Enviar respuesta de éxito
+                header('HTTP/1.1 200 OK');
+                echo json_encode(array('message' => 'Registro actualizado exitosamente'));
+            } else {
+                // Enviar respuesta de error si no se encontró el registro
+                header('HTTP/1.1 404 Not Found');
+                echo json_encode(array('message' => 'Registro no encontrado'));
+            }
+        } else {
+            // Enviar respuesta de error si no se proporcionó un ID
+            header('HTTP/1.1 400 Bad Request');
+            echo json_encode(array('message' => 'Se debe proporcionar un ID'));
+        }
+    } elseif ($_SERVER['REQUEST_METHOD'] === 'DELETE') {
+        // Verificar si se proporcionó un ID en la URL
+        if(isset($_GET['id'])) {
+            $id = $_GET['id'];
+
+            // Consulta SQL para eliminar un registro por su ID
+            $sql = "DELETE FROM pc WHERE id = :id";
+            
+            // Preparar la consulta
+            $stmt = $pdo->prepare($sql);
+            
+            // Vincular el parámetro :id
+            $stmt->bindParam(':id', $id, PDO::PARAM_INT);
+            
+            // Ejecutar la consulta
+            $stmt->execute();
+            
+            // Comprobar si se eliminó el registro
+            if ($stmt->rowCount() > 0) {
+                // Enviar respuesta de éxito
+                header('HTTP/1.1 200 OK');
+                echo json_encode(array('message' => 'Registro eliminado exitosamente'));
+            } else {
+                // Enviar respuesta de error si no se encontró el registro
+                header('HTTP/1.1 404 Not Found');
+                echo json_encode(array('message' => 'Registro no encontrado'));
+            }
+        } else {
+            // Enviar respuesta de error si no se proporcionó un ID
+            header('HTTP/1.1 400 Bad Request');
+            echo json_encode(array('message' => 'Se debe proporcionar un ID'));
         }
     } else {
-        echo "Error al recibir los datos.";
+        // Enviar respuesta de error si el método no es GET, POST, PUT o DELETE
+        header('HTTP/1.1 405 Method Not Allowed');
+        echo json_encode(array('message' => 'Método no permitido'));
     }
-} elseif ($_SERVER["REQUEST_METHOD"] === "PUT") {
-    // Obtener los datos enviados en la solicitud PUT
-    parse_str(file_get_contents("php://input"), $data);
-    
-    // Verificar si se recibieron los datos correctamente
-    if ($data && isset($data['id'])) {
-        // Obtener el ID del registro a actualizar
-        $id = $data['id'];
 
-        // Verificar y asignar los valores de los datos recibidos
-        $nombre = isset($data['nombre']) ? $data['nombre'] : '';
-        $modelo = isset($data['modelo']) ? $data['modelo'] : '';
-        $nserie = isset($data['nserie']) ? $data['nserie'] : '';
-        $teclado = isset($data['teclado']) ? $data['teclado'] : 0;
-        $mouse = isset($data['mouse']) ? $data['mouse'] : 0;
-        $observacion = isset($data['observacion']) ? $data['observacion'] : '';
-        $estado_id = isset($data['estado_id']) ? $data['estado_id'] : 0;
-        $mesa_id = isset($data['mesa_id']) ? $data['mesa_id'] : 0;
-
-        // Consulta SQL para actualizar el registro
-        $sql_update = "UPDATE pc 
-                       SET nombre='$nombre', modelo='$modelo', nserie='$nserie', teclado=$teclado, mouse=$mouse, observacion='$observacion', estado_id=$estado_id, mesa_id=$mesa_id
-                       WHERE id=$id";
-        
-        // Ejecutar la consulta de actualización
-        if ($conn->query($sql_update) === TRUE) {
-            echo "Registro actualizado correctamente.";
-        } else {
-            echo "Error al actualizar el registro: " . $conn->error;
-        }
-    } else {
-        echo "Error al recibir los datos.";
-    }
-} elseif ($_SERVER["REQUEST_METHOD"] === "DELETE") {
-    // Verificar si se ha enviado un ID para eliminar
-    if(isset($_GET['id'])) {
-        // Obtener el ID del parámetro GET
-        $id = $_GET['id'];
-        
-        // Consulta SQL para eliminar el registro con el ID proporcionado
-        $sql_delete = "DELETE FROM pc WHERE id = $id";
-        
-        // Ejecutar la consulta de eliminación
-        if ($conn->query($sql_delete) === TRUE) {
-            echo "Registro eliminado correctamente.";
-        } else {
-            echo "Error al eliminar el registro: " . $conn->error;
-        }
-    } else {
-        echo "No se proporcionó un ID para eliminar.";
-    }
-} else {
-    echo "Método HTTP no permitido.";
+} catch(PDOException $e) {
+    // En caso de error en la conexión, mostrar el mensaje de error
+    echo "Error de conexión: " . $e->getMessage();
 }
-
-// Cerrar la conexión
-$conn->close();
 ?>
